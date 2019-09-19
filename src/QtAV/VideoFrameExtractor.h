@@ -1,8 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2014)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -25,8 +25,8 @@
 #include <QtCore/QObject>
 #include <QtAV/VideoFrame.h>
 
+//TODO: extract all streams
 namespace QtAV {
-
 class VideoFrameExtractorPrivate;
 class Q_AV_EXPORT VideoFrameExtractor : public QObject
 {
@@ -39,11 +39,17 @@ class Q_AV_EXPORT VideoFrameExtractor : public QObject
     Q_PROPERTY(qint64 position READ position WRITE setPosition NOTIFY positionChanged)
 public:
     explicit VideoFrameExtractor(QObject *parent = 0);
-    void setSource(const QString value);
+    /*!
+     * \brief setSource
+     * Set the video file. If video changes, current loaded video will be unloaded.
+     */
+    void setSource(const QString url);
     QString source() const;
     /*!
      * \brief setAsync
      * Extract video frames in another thread. Default is true.
+     * In async mode, if current extraction is not finished, new
+     * setPosition() will be ignored.
      */
     void setAsync(bool value);
     bool async() const;
@@ -53,19 +59,20 @@ public:
      * \brief setPrecision
      * if the difference between the next requested position is less than the value, previous
      * one is used and no positionChanged() and frameExtracted() signals to emit.
-     * Default is 500ms.
+     * \param value < 0: auto. Real value depends on video duration and fps, but always 20 <= value <=500
+     * Default is auto.
      */
     void setPrecision(int value);
     int precision() const;
     void setPosition(qint64 value);
     qint64 position() const;
 
-    virtual bool event(QEvent *e);
-signals:
+Q_SIGNALS:
     void frameExtracted(const QtAV::VideoFrame& frame); // parameter: VideoFrame, bool changed?
     void sourceChanged();
     void asyncChanged();
-    void error(); // clear preview image in a slot
+    void error(const QString &errorMessage); ///< emitted with a helpful error message -- connect to this to show empty image in preview widget
+    void aborted(const QString &abortMessage);  ///< emitted when aborting the current preview -- if user requested a new preview this usually gets emitted.  connect to this to show empty preview
     void autoExtractChanged();
     /*!
      * \brief positionChanged
@@ -74,17 +81,15 @@ signals:
     void positionChanged();
     void precisionChanged();
 
-    void aboutToExtract(qint64 pos);
-
-public slots:
+public Q_SLOTS:
     /*!
      * \brief extract
      * If last extracted frame can be use, use it.
-     * If there is a key frame in [position-precision, position+precision], the nearest key frame
+     * If there is a key frame in [position, position+precision], the nearest key frame
      * before position+precision will be extracted. Otherwise, the given position frame will be extracted.
      */
     void extract();
-private slots:
+private Q_SLOTS:
     void extractInternal(qint64 pos);
 
 protected:

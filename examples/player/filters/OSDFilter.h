@@ -1,8 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2013)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -23,24 +23,16 @@
 #define QTAV_OSDFILTER_H
 
 #include <QtAV/Filter.h>
-#include "OSD.h"
 #include <QtAV/FilterContext.h>
+#include "OSD.h"
+
 using namespace QtAV;
-class OSDFilterPrivate;
-//TODO: not template. OSDFilter : public Filter, public OSD
 class OSDFilter : public VideoFilter, public OSD
 {
-protected:
-    DPTR_DECLARE_PRIVATE(OSDFilter)
-    OSDFilter(OSDFilterPrivate& d, QObject *parent = 0);
-};
-
-class OSDFilterQPainter : public OSDFilter
-{
 public:
-    OSDFilterQPainter(QObject *parent = 0);
-    VideoFilterContext::Type contextType() const {
-        return VideoFilterContext::QtPainter;
+    OSDFilter(QObject *parent = 0);
+    bool isSupported(VideoFilterContext::Type ct) const {
+        return ct == VideoFilterContext::QtPainter || ct == VideoFilterContext::X11;
     }
 protected:
     void process(Statistics* statistics, VideoFrame* frame);

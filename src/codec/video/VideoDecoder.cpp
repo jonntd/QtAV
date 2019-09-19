@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2018 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -19,47 +19,93 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include <QtAV/VideoDecoder.h>
-#include <QtAV/private/VideoDecoder_p.h>
-#include <QtCore/QSize>
+#include "QtAV/VideoDecoder.h"
+#include "QtAV/private/AVDecoder_p.h"
 #include "QtAV/private/factory.h"
+#include "QtAV/private/mkid.h"
 #include "utils/Logger.h"
 
 namespace QtAV {
-
 FACTORY_DEFINE(VideoDecoder)
 
-extern void RegisterVideoDecoderFFmpeg_Man();
-extern void RegisterVideoDecoderDXVA_Man();
-extern void RegisterVideoDecoderCUDA_Man();
-extern void RegisterVideoDecoderVAAPI_Man();
-extern void RegisterVideoDecoderVDA_Man();
-extern void RegisterVideoDecoderCedarv_Man();
+VideoDecoderId VideoDecoderId_FFmpeg = mkid::id32base36_6<'F', 'F', 'm', 'p', 'e', 'g'>::value;
+VideoDecoderId VideoDecoderId_CUDA = mkid::id32base36_4<'C', 'U', 'D', 'A'>::value;
+VideoDecoderId VideoDecoderId_DXVA = mkid::id32base36_4<'D', 'X', 'V', 'A'>::value;
+VideoDecoderId VideoDecoderId_D3D11 = mkid::id32base36_5<'D','3','D','1','1'>::value;
+VideoDecoderId VideoDecoderId_VAAPI = mkid::id32base36_5<'V', 'A', 'A', 'P', 'I'>::value;
+VideoDecoderId VideoDecoderId_Cedarv = mkid::id32base36_6<'C', 'e', 'd', 'a', 'r', 'V'>::value;
+VideoDecoderId VideoDecoderId_VDA = mkid::id32base36_3<'V', 'D', 'A'>::value;
+VideoDecoderId VideoDecoderId_VideoToolbox = mkid::id32base36_5<'V', 'T', 'B', 'o', 'x'>::value;
+VideoDecoderId VideoDecoderId_MediaCodec = mkid::id32base36_4<'F','F','M','C'>::value;
+VideoDecoderId VideoDecoderId_MMAL = mkid::id32base36_6<'F','F','M', 'M','A', 'L'>::value;
+VideoDecoderId VideoDecoderId_QSV = mkid::id32base36_5<'F','F','Q','S', 'V'>::value;
+VideoDecoderId VideoDecoderId_CrystalHD = mkid::id32base36_5<'F','F','C','H', 'D'>::value;
 
-void VideoDecoder_RegisterAll()
+static void VideoDecoder_RegisterAll()
 {
+    static bool called = false;
+    if (called)
+        return;
+    called = true;
+    // factory.h does not check whether an id is registered
+    if (VideoDecoder::name(VideoDecoderId_FFmpeg)) //registered on load
+        return;
+    extern bool RegisterVideoDecoderFFmpeg_Man();
     RegisterVideoDecoderFFmpeg_Man();
 #if QTAV_HAVE(DXVA)
+    extern bool RegisterVideoDecoderDXVA_Man();
     RegisterVideoDecoderDXVA_Man();
 #endif //QTAV_HAVE(DXVA)
+#if QTAV_HAVE(D3D11VA)
+    extern bool RegisterVideoDecoderD3D11_Man();
+    RegisterVideoDecoderD3D11_Man();
+#endif //QTAV_HAVE(DXVA)
 #if QTAV_HAVE(CUDA)
+    extern bool RegisterVideoDecoderCUDA_Man();
     RegisterVideoDecoderCUDA_Man();
 #endif //QTAV_HAVE(CUDA)
 #if QTAV_HAVE(VAAPI)
+    extern bool RegisterVideoDecoderVAAPI_Man();
     RegisterVideoDecoderVAAPI_Man();
 #endif //QTAV_HAVE(VAAPI)
+#if QTAV_HAVE(VIDEOTOOLBOX)
+    extern bool RegisterVideoDecoderVideoToolbox_Man();
+    RegisterVideoDecoderVideoToolbox_Man();
+#endif //QTAV_HAVE(VIDEOTOOLBOX)
 #if QTAV_HAVE(VDA)
+    extern bool RegisterVideoDecoderVDA_Man();
     RegisterVideoDecoderVDA_Man();
 #endif //QTAV_HAVE(VDA)
 #if QTAV_HAVE(CEDARV)
+    extern bool RegisterVideoDecoderCedarv_Man();
     RegisterVideoDecoderCedarv_Man();
 #endif //QTAV_HAVE(CEDARV)
 }
-
-
-VideoDecoder::VideoDecoder()
-    :AVDecoder(*new VideoDecoderPrivate())
+// TODO: called in ::create()/next() etc. to ensure registered?
+QVector<VideoDecoderId> VideoDecoder::registered()
 {
+    VideoDecoder_RegisterAll();
+    return QVector<VideoDecoderId>::fromStdVector(VideoDecoderFactory::Instance().registeredIds());
+}
+
+QStringList VideoDecoder::supportedCodecs()
+{
+    static QStringList codecs;
+    if (!codecs.isEmpty())
+        return codecs;
+    const AVCodec* c = NULL;
+#if AVCODEC_STATIC_REGISTER
+    void* it = NULL;
+    while ((c = av_codec_iterate(&it))) {
+#else
+    avcodec_register_all();
+    while ((c = av_codec_next(c))) {
+#endif
+        if (!av_codec_is_decoder(c) || c->type != AVMEDIA_TYPE_VIDEO)
+            continue;
+        codecs.append(QString::fromLatin1(c->name));
+    }
+    return codecs;
 }
 
 VideoDecoder::VideoDecoder(VideoDecoderPrivate &d):
@@ -69,102 +115,6 @@ VideoDecoder::VideoDecoder(VideoDecoderPrivate &d):
 
 QString VideoDecoder::name() const
 {
-    return QString(VideoDecoderFactory::name(id()).c_str());
+    return QLatin1String(VideoDecoder::name(id()));
 }
-
-bool VideoDecoder::prepare()
-{
-    return AVDecoder::prepare();
-}
-
-//TODO: use ipp, cuda decode and yuv functions. is sws_scale necessary?
-bool VideoDecoder::decode(const QByteArray &encoded)
-{
-    if (!isAvailable())
-        return false;
-    DPTR_D(VideoDecoder);
-    AVPacket packet;
-#if NO_PADDING_DATA
-    /*!
-      larger than the actual read bytes because some optimized bitstream readers read 32 or 64 bits at once and could read over the end.
-      The end of the input buffer avpkt->data should be set to 0 to ensure that no overreading happens for damaged MPEG streams
-     */
-    // auto released by av_buffer_default_free
-    av_new_packet(&packet, encoded.size());
-    memcpy(packet.data, encoded.data(), encoded.size());
-#else
-    av_init_packet(&packet);
-    packet.size = encoded.size();
-    packet.data = (uint8_t*)encoded.constData();
-#endif //NO_PADDING_DATA
-//TODO: use AVPacket directly instead of Packet?
-    //AVStream *stream = format_context->streams[stream_idx];
-
-    //TODO: some decoders might in addition need other fields like flags&AV_PKT_FLAG_KEY
-    int ret = avcodec_decode_video2(d.codec_ctx, d.frame, &d.got_frame_ptr, &packet);
-    //qDebug("pic_type=%c", av_get_picture_type_char(d.frame->pict_type));
-    d.undecoded_size = qMin(encoded.size() - ret, encoded.size());
-    //TODO: decoded format is YUV420P, YUV422P?
-    av_free_packet(&packet);
-    if (ret < 0) {
-        qWarning("[VideoDecoder] %s", av_err2str(ret));
-        return false;
-    }
-    if (!d.got_frame_ptr) {
-        qWarning("no frame could be decompressed: %s", av_err2str(ret));
-        return true;
-    }
-    if (!d.codec_ctx->width || !d.codec_ctx->height)
-        return false;
-    //qDebug("codec %dx%d, frame %dx%d", d.codec_ctx->width, d.codec_ctx->height, d.frame->width, d.frame->height);
-    d.width = d.frame->width;
-    d.height = d.frame->height;
-    //avcodec_align_dimensions2(d.codec_ctx, &d.width_align, &d.height_align, aligns);
-    return true;
-}
-
-void VideoDecoder::resizeVideoFrame(const QSize &size)
-{
-    resizeVideoFrame(size.width(), size.height());
-}
-
-/*
- * width, height: the decoded frame size
- * 0, 0 to reset to original video frame size
- */
-void VideoDecoder::resizeVideoFrame(int width, int height)
-{
-    DPTR_D(VideoDecoder);
-    d.width = width;
-    d.height = height;
-}
-
-int VideoDecoder::width() const
-{
-    return d_func().width;
-}
-
-int VideoDecoder::height() const
-{
-    return d_func().height;
-}
-
-VideoFrame VideoDecoder::frame()
-{
-    DPTR_D(VideoDecoder);
-    if (d.width <= 0 || d.height <= 0 || !d.codec_ctx)
-        return VideoFrame(0, 0, VideoFormat(VideoFormat::Format_Invalid));
-    //DO NOT make frame as a memeber, because VideoFrame is explictly shared!
-    float displayAspectRatio = 0;
-    if (d.codec_ctx->sample_aspect_ratio.den > 0)
-        displayAspectRatio = ((float)d.frame->width / (float)d.frame->height) *
-            ((float)d.codec_ctx->sample_aspect_ratio.num / (float)d.codec_ctx->sample_aspect_ratio.den);
-
-    VideoFrame frame(d.frame->width, d.frame->height, VideoFormat((int)d.codec_ctx->pix_fmt));
-    frame.setDisplayAspectRatio(displayAspectRatio);
-    frame.setBits(d.frame->data);
-    frame.setBytesPerLine(d.frame->linesize);
-    return frame;
-}
-
 } //namespace QtAV

@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -51,9 +51,15 @@ public:
     //TODO: what about audio's pause api?
     void pause(bool p); //processEvents when waiting?
     bool isPaused() const;
-    //No filters() api, they are used internally?
     QList<Filter*>& filters();
-    bool installFilter(Filter *filter);
+    /*!
+     * \brief installFilter
+     * Insert a filter at position 'index' of current filter list.
+     * If the filter is already installed, it will move to the correct index.
+     * \param index A nagative index == size() + index. If index >= size(), append at last
+     * \return false if already installed
+     */
+    bool installFilter(Filter *filter, int index = 0x7fffffff);
     bool uninstallFilter(Filter *filter);
 protected:
     AVOutput(AVOutputPrivate& d);
@@ -75,12 +81,8 @@ protected:
 private:
     // for proxy VideoOutput
     virtual void setStatistics(Statistics* statistics); //called by friend AVPlayer
-    virtual bool onInstallFilter(Filter *filter);
+    virtual bool onInstallFilter(Filter *filter, int index);
     virtual bool onUninstallFilter(Filter *filter);
-    virtual void onAddOutputSet(OutputSet *set);
-    virtual void onRemoveOutputSet(OutputSet *set);
-    virtual void onAttach(OutputSet *set); //add this to set
-    virtual void onDetach(OutputSet *set = 0); //detatch from (all, if 0) output set(s)
     // only called in handlePaintEvent. But filters may change. so required by proxy to update it's filters
     virtual bool onHanlePendingTasks(); //return true: proxy update filters
     friend class AVPlayer;

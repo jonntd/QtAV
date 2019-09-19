@@ -4,7 +4,9 @@ import "utils.js" as Utils
 Page {
     id: root
     title: qsTr("Video Codec")
-    height: Utils.scaled(200)
+    height: titleHeight + detail.height + listView.height + copyMode.height + Utils.kSpacing*4
+    signal zeroCopyChanged(bool value)
+    property var defaultDecoders: []
 
     QtObject {
         id: d
@@ -12,24 +14,25 @@ Page {
         property string detail: qsTr("Takes effect on the next play")
     }
 
-    Item {
+    Column {
         anchors.fill: content
+        spacing: Utils.kSpacing
         Text {
             id: detail
-            anchors.fill: parent
-            anchors.bottomMargin: Utils.scaled(50)
             text: d.detail
             color: "white"
+            height: contentHeight + 1.6*Utils.kItemHeight
+            width: parent.width
             font.pixelSize: Utils.kFontSize
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
         ListView {
             id: listView
+            contentWidth: parent.width - Utils.scaled(20)
+            height: Utils.kItemHeight
             anchors {
-                top: detail.bottom
-                bottom: parent.bottom
-                topMargin: Utils.kMargin
+                //topMargin: Utils.kMargin
                 horizontalCenter: parent.horizontalCenter
             }
             onContentWidthChanged: {
@@ -42,16 +45,13 @@ Page {
             focus: true
 
             delegate: contentDelegate
-            model: contentModel
+            model: codecMode
         }
 
         ListModel {
-            id: contentModel
-            ListElement { name: "VDA"; hardware: true; description: "VDA (OSX)" }
-            ListElement { name: "DXVA"; hardware: true; description: "DirectX Video Acceleration (Windows)" }
-            ListElement { name: "VAAPI"; hardware: true; description: "VA-API (Linux) " }
-            ListElement { name: "CUDA"; hardware: true; description: "NVIDIA CUDA (Windows, Linux)"}
-            ListElement { name: "FFmpeg"; hardware: false; description: "FFmpeg/Libav" }
+            id: codecMode
+            ListElement { name: "Auto"; hardware: true; zcopy: true; description: qsTr("Try hardware decoders first") }
+            ListElement { name: "FFmpeg"; hardware: false; zcopy: false; description: "FFmpeg/Libav" }
         }
 
         Component {
@@ -59,8 +59,8 @@ Page {
             DelegateItem {
                 id: delegateItem
                 text: name
-                width: textContentWidth + Utils.scaled(8)
-                height: textContentHeight + Utils.scaled(8)
+                //width: Utils.kItemWidth
+                height: Utils.kItemHeight
                 color: "#aa000000"
                 selectedColor: "#aa0000cc"
                 border.color: "white"
@@ -70,15 +70,73 @@ Page {
                     if (d.selectedItem)
                         d.selectedItem.state = "baseState"
                     d.selectedItem = delegateItem
-                    d.detail = description + " " + (hardware ? qsTr("hardware decoding") : qsTr("software decoding"))  + "\n" + qsTr("Takes effect on the next play")
+                }
+                onStateChanged: {
+                    if (state != "selected")
+                        return
+                    if (name === "Auto") {
+                        PlayerConfig.decoderPriorityNames = defaultDecoders
+                        d.detail = description
+                        return
+                    }
+                    d.detail = description + " " + (hardware ? qsTr("hardware decoding") : qsTr("software decoding"))
+                    if (name === "FFmpeg") {
+                        copyMode.visible = false
+                    } else {
+                        copyMode.visible = zcopy
+                        d.detail += "\n" + qsTr("Zero Copy support") + ":" + zcopy
+                    }
                     PlayerConfig.decoderPriorityNames = [ name ]
                 }
             }
         }
+        Button {
+            id: copyMode
+            text: qsTr("Zero copy")
+            checked: PlayerConfig.zeroCopy
+            checkable: true
+            width: parent.width
+            height: Utils.kItemHeight
+            onCheckedChanged: PlayerConfig.zeroCopy = checked
+        }
     }
     Component.onCompleted: {
-        for (var i = 0; i < contentModel.count; ++i) {
-            if (contentModel.get(i).name === PlayerConfig.decoderPriorityNames[0]) {
+        if (Qt.platform.os == "windows") {
+            defaultDecoders.push("DXVA")
+            defaultDecoders.push("D3D11")
+            defaultDecoders.push("CUDA")
+            codecMode.append({ name: "DXVA", hardware: true, zcopy: true, description: "DirectX Video Acceleration (Windows)\nUse OpenGLES(ANGLE) + D3D to support 0-copy" })
+            codecMode.append({ name: "D3D11", hardware: true, zcopy: true, description: "D3D11 Video Acceleration\n0-copy is supported under OpenGLES(ANGLE)" })
+            codecMode.append({ name: "CUDA", hardware: true, zcopy: true, description: "NVIDIA CUDA (Windows, Linux).\nH264 10bit support."})
+        } else if (Qt.platform.os == "winrt" || Qt.platform.os == "winphone") {
+            defaultDecoders.push("D3D11")
+            codecMode.append({ name: "D3D11", hardware: true, zcopy: true, description: "D3D11 Video Acceleration" })
+        } else if (Qt.platform.os == "osx") {
+            defaultDecoders.push("VideoToolbox")
+            defaultDecoders.push("VDA")
+            codecMode.append({ name: "VideoToolbox", hardware: true, zcopy: true, description: "VideoToolbox (OSX)" })
+            codecMode.append({ name: "VDA", hardware: true, zcopy: true, description: "VDA (OSX)" })
+        } else if (Qt.platform.os == "ios") {
+            defaultDecoders.append("VideoToolbox")
+            codecMode.append({ name: "VideoToolbox", hardware: true, zcopy: true, description: "VideoToolbox (iOS)" })
+        } else if(Qt.platform.os == "android") {
+            defaultDecoders.push("MediaCodec")
+            codecMode.append({ name: "MediaCodec", hardware: true, zcopy: false, description: "Android(>=4.1) MediaCodec (H.264)" })
+        } else if (Qt.platform.os == "linux") {
+            defaultDecoders.push("VAAPI")
+            defaultDecoders.push("CUDA")
+            codecMode.append({ name: "VAAPI", hardware: true, zcopy: true, description: "VA-API (Linux) " })
+            codecMode.append({ name: "CUDA", hardware: true, zcopy: true, description: "NVIDIA CUDA (Windows, Linux)"})
+        }
+        defaultDecoders.push("FFmpeg")
+        if (PlayerConfig.decoderPriorityNames.length > 1) {
+            listView.currentIndex = 0;
+            d.selectedItem = listView.currentItem
+            listView.currentItem.state = "selected"
+            return
+        }
+        for (var i = 1; i < codecMode.count; ++i) {
+            if (codecMode.get(i).name === PlayerConfig.decoderPriorityNames[0]) {
                 listView.currentIndex = i;
                 d.selectedItem = listView.currentItem
                 listView.currentItem.state = "selected"

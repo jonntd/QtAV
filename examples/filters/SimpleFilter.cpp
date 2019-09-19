@@ -1,8 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2013)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -20,12 +20,12 @@
 ******************************************************************************/
 
 #include "SimpleFilter.h"
-#include "QtAV/private/Filter_p.h"
+#include <QWidget>
 #include <math.h>
 
 namespace QtAV {
 
-SimpleFilter::SimpleFilter(QWidget *parent):
+SimpleFilter::SimpleFilter(QObject *parent):
     VideoFilter(parent)
   , mCanRot(true)
   , mWave(true)
@@ -86,7 +86,7 @@ void SimpleFilter::prepare()
 
 void SimpleFilter::timerEvent(QTimerEvent *)
 {
-    if (parent())
+    if (qobject_cast<QWidget*>(parent()))
         ((QWidget*)parent())->update();
 }
 
@@ -96,12 +96,8 @@ void SimpleFilter::process(Statistics *statistics, VideoFrame *frame)
     Q_UNUSED(frame);
     if (!isEnabled())
         return;
-    VideoFilterContext *ctx = static_cast<VideoFilterContext*>(context());
-    if (!ctx->painter)
-        return;
-
     int t = mTime.elapsed()/100;
-
+    VideoFilterContext *ctx = static_cast<VideoFilterContext*>(context());
     if (mCanRot) {
         mMat.rotate(2, 0, 1, -0.1);
         ctx->transform = mMat.toTransform();

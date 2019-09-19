@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2014-2016 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -22,7 +22,7 @@
 #ifndef QTAV_OPENGLRENDERERBASE_P_H
 #define QTAV_OPENGLRENDERERBASE_P_H
 
-#include "private/VideoRenderer_p.h"
+#include "QtAV/private/VideoRenderer_p.h"
 #include "QtAV/OpenGLVideo.h"
 
 namespace QtAV {
@@ -37,6 +37,7 @@ public:
     QPainter *painter;
     OpenGLVideo glv;
     QMatrix4x4 matrix;
+    bool frame_changed;
 };
 
 } //namespace QtAV

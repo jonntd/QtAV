@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -25,13 +25,10 @@
 #include <QtCore/QRunnable>
 #include <QtCore/QScopedPointer>
 #include <QtCore/QThread>
-#include "QtAV/Packet.h"
-#include "utils/BlockingQueue.h"
+#include "PacketBuffer.h"
 //TODO: pause functions. AVOutput may be null, use AVThread's pause state
 
 namespace QtAV {
-
-typedef BlockingQueue<Packet, QQueue> PacketQueue;
 
 class AVDecoder;
 class AVThreadPrivate;
@@ -55,8 +52,7 @@ public:
     void setClock(AVClock *clock);
     AVClock* clock() const;
 
-    //void setPacketQueue(PacketQueue *queue);
-    PacketQueue* packetQueue() const;
+    PacketBuffer* packetQueue() const;
 
     void setDecoder(AVDecoder *decoder);
     AVDecoder *decoder() const;
@@ -71,18 +67,21 @@ public:
 
     bool isPaused() const;
 
-    void waitForReady();
+    bool waitForStarted(int msec = -1);
 
-    bool installFilter(Filter *filter, bool lock = true);
+    bool installFilter(Filter *filter, int index = 0x7FFFFFFF, bool lock = true);
     bool uninstallFilter(Filter *filter, bool lock = true);
     const QList<Filter *> &filters() const;
 
     // TODO: resample, resize task etc.
     void scheduleTask(QRunnable *task);
+    void requestSeek();
+    void scheduleFrameDrop(bool value = true);
+    qreal previousHistoryPts() const; //move to statistics?
+    qreal decodeFrameRate() const; //move to statistics?
+    void setDropFrameOnSeek(bool value);
 
-    //only decode video without display or skip decode audio until pts reaches
-    void skipRenderUntil(qreal pts);
-
+    void resetState();
 public slots:
     virtual void stop();
     /*change pause state. the pause/continue action will do in the next loop*/
@@ -91,10 +90,17 @@ public slots:
 
 Q_SIGNALS:
     void frameDelivered();
-
+    /*!
+     * \brief seekFinished
+     * \param timestamp the frame pts after seek
+     */
+    void seekFinished(qint64 timestamp);
+    void eofDecoded();
+private Q_SLOTS:
+    void onStarted();
+    void onFinished();
 protected:
     AVThread(AVThreadPrivate& d, QObject *parent = 0);
-    void resetState();
     /*
      * If the pause state is true setted by pause(true), then block the thread and wait for pause state changed, i.e. pause(false)
      * and return true. Otherwise, return false immediatly.
@@ -102,9 +108,10 @@ protected:
     // has timeout so that the pending tasks can be processed
     bool tryPause(unsigned long timeout = 100);
     bool processNextTask(); //in AVThread
+    // pts > 0: compare pts and clock when waiting
+    void waitAndCheck(ulong value, qreal pts);
 
     DPTR_DECLARE(AVThread)
-
 private:
     void setStatistics(Statistics* statistics);
     friend class AVPlayer;

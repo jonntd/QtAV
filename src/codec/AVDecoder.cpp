@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2018 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -22,65 +22,73 @@
 #include <QtAV/AVDecoder.h>
 #include <QtAV/private/AVDecoder_p.h>
 #include <QtAV/version.h>
+#include "utils/internal.h"
 #include "utils/Logger.h"
 
 namespace QtAV {
-AVDecoder::AVDecoder()
+
+static AVCodec* get_codec(const QString &name, const QString& hwa, AVCodecID cid)
 {
-    class AVInitializer {
-    public:
-        AVInitializer() {
-            qDebug("avcodec_register_all");
-            avcodec_register_all();
-        }
-    };
-    static AVInitializer sAVInit;
-    Q_UNUSED(sAVInit);
+    QString fullname(name);
+    if (name.isEmpty()) {
+        if (hwa.isEmpty())
+            return avcodec_find_decoder(cid);
+        fullname = QString("%1_%2").arg(avcodec_get_name(cid)).arg(hwa);
+    }
+    AVCodec *codec = avcodec_find_decoder_by_name(fullname.toUtf8().constData());
+    if (codec)
+        return codec;
+    const AVCodecDescriptor* cd = avcodec_descriptor_get_by_name(fullname.toUtf8().constData());
+    if (cd)
+        return avcodec_find_decoder(cd->id);
+    return NULL;
 }
 
 AVDecoder::AVDecoder(AVDecoderPrivate &d)
     :DPTR_INIT(&d)
 {
+#if !AVCODEC_STATIC_REGISTER
+    avcodec_register_all(); // avcodec_find_decoder will always be used
+#endif
 }
 
 AVDecoder::~AVDecoder()
 {
-    setCodecContext(0);
+    setCodecContext(0); // FIXME:  will call virtual
 }
 
 QString AVDecoder::name() const
 {
-    return "avcodec";
+    return QString();
 }
 
 QString AVDecoder::description() const
 {
-    return QString("FFmpeg/Libav avcodec %1.%2.%3").arg(QTAV_VERSION_MAJOR(avcodec_version())).arg(QTAV_VERSION_MINOR(avcodec_version())).arg(QTAV_VERSION_PATCH(avcodec_version()));
+    return QString();
 }
 
 bool AVDecoder::open()
 {
     DPTR_D(AVDecoder);
+    // codec_ctx can't be null for none-ffmpeg based decoders because we may use it's properties in those decoders
     if (!d.codec_ctx) {
         qWarning("FFmpeg codec context not ready");
         return false;
     }
-    AVCodec *codec = 0;
-    if (!d.codec_name.isEmpty()) {
-        codec = avcodec_find_decoder_by_name(d.codec_name.toUtf8().constData());
-    } else {
-        codec = avcodec_find_decoder(d.codec_ctx->codec_id);
-    }
-    if (!codec) {
+    const QString hwa = property("hwaccel").toString();
+    AVCodec* codec = get_codec(codecName(), hwa, d.codec_ctx->codec_id);
+    if (!codec) { // TODO: can be null for none-ffmpeg based decoders
         QString es(tr("No codec could be found for '%1'"));
         if (d.codec_name.isEmpty()) {
-            es = es.arg(avcodec_get_name(d.codec_ctx->codec_id));
+            es = es.arg(QLatin1String(avcodec_get_name(d.codec_ctx->codec_id)));
+            if (!hwa.isEmpty())
+                es.append('_').append(hwa);
         } else {
             es = es.arg(d.codec_name);
         }
         qWarning() << es;
         AVError::ErrorCode ec(AVError::CodecError);
-        switch (d.codec_ctx->coder_type) {
+        switch (d.codec_ctx->codec_type) {
         case AVMEDIA_TYPE_VIDEO:
             ec = AVError::VideoCodecNotFound;
             break;
@@ -92,77 +100,25 @@ bool AVDecoder::open()
         default:
             break;
         }
-        emit error(AVError(ec, es));
+        Q_EMIT error(AVError(ec, es));
         return false;
     }
-
-    //setup video codec context
-    if (d.low_resolution > codec->max_lowres) {
-        qWarning("Use the max value for lowres supported by the decoder (%d)", codec->max_lowres);
-        d.low_resolution = codec->max_lowres;
-    }
-    d.codec_ctx->lowres = d.low_resolution;
-    if (d.codec_ctx->lowres) {
-        d.codec_ctx->flags |= CODEC_FLAG_EMU_EDGE;
-    }
-    if (d.fast) {
-        d.codec_ctx->flags2 |= CODEC_FLAG2_FAST;
-    } else {
-        //d.codec_ctx->flags2 &= ~CODEC_FLAG2_FAST; //ffplay has no this
-    }
-    if (codec->capabilities & CODEC_CAP_DR1) {
-        d.codec_ctx->flags |= CODEC_FLAG_EMU_EDGE;
-    }
-    //set thread
-
-    //d.codec_ctx->strict_std_compliance = FF_COMPLIANCE_STRICT;
-    //d.codec_ctx->slice_flags |= SLICE_FLAG_ALLOW_FIELD;
-// lavfilter
-    //d.codec_ctx->slice_flags |= SLICE_FLAG_ALLOW_FIELD; //lavfilter
-    //d.codec_ctx->strict_std_compliance = FF_COMPLIANCE_STRICT;
-
-//from vlc
-    //HAVE_AVCODEC_MT macro?
-    if (d.threads == -1)
-        d.threads = qMax(0, QThread::idealThreadCount());
-    if (d.threads > 0)
-        d.codec_ctx->thread_count = d.threads;
-    d.codec_ctx->thread_safe_callbacks = true;
-    switch (d.codec_ctx->codec_id) {
-        case QTAV_CODEC_ID(MPEG4):
-        case QTAV_CODEC_ID(H263):
-            d.codec_ctx->thread_type = 0;
-            break;
-        case QTAV_CODEC_ID(MPEG1VIDEO):
-        case QTAV_CODEC_ID(MPEG2VIDEO):
-            d.codec_ctx->thread_type &= ~FF_THREAD_SLICE;
-            /* fall through */
-# if (LIBAVCODEC_VERSION_INT < AV_VERSION_INT(55, 1, 0))
-        case QTAV_CODEC_ID(H264):
-        case QTAV_CODEC_ID(VC1):
-        case QTAV_CODEC_ID(WMV3):
-            d.codec_ctx->thread_type &= ~FF_THREAD_FRAME;
-# endif
-        default:
-            break;
-    }
-/*
-    if (d.codec_ctx->thread_type & FF_THREAD_FRAME)
-        p_dec->i_extra_picture_buffers = 2 * p_sys->p_context->thread_count;
-*/
     // hwa extra init can be here
     if (!d.open()) {
         d.close();
         return false;
     }
-    //set dict used by avcodec_open2(). see ffplay
-    // AVDictionary *opts;
-    int ret = avcodec_open2(d.codec_ctx, codec, d.options.isEmpty() ? NULL : &d.dict);
-    if (ret < 0) {
-        qWarning("open video codec failed: %s", av_err2str(ret));
-        return false;
-    }
+    // CODEC_FLAG_OUTPUT_CORRUPT, CODEC_FLAG2_SHOW_ALL?
+    // TODO: skip for none-ffmpeg based decoders
+    d.applyOptionsForDict();
+    av_opt_set_int(d.codec_ctx, "refcounted_frames", d.enableFrameRef(), 0); // why dict may have no effect?
+    // TODO: only open for ff decoders
+    //av_dict_set(&d.dict, "lowres", "1", 0);
+    // dict is used for a specified AVCodec options (priv_class), av_opt_set_xxx(avctx) is only for avctx
+    AV_ENSURE_OK(avcodec_open2(d.codec_ctx, codec, d.options.isEmpty() ? NULL : &d.dict), false);
     d.is_open = true;
+    static const char* thread_name[] = { "Single", "Frame", "Slice"};
+    qDebug("%s thread type: %s, count: %d", metaObject()->className(), thread_name[d.codec_ctx->active_thread_type], d.codec_ctx->thread_count);
     return true;
 }
 
@@ -174,16 +130,11 @@ bool AVDecoder::close()
     DPTR_D(AVDecoder);
     d.is_open = false;
     // hwa extra finalize can be here
+    flush();
     d.close();
     // TODO: reset config?
-    if (!d.codec_ctx) {
-        qWarning("FFmpeg codec context not ready");
-        return false;
-    }
-    int ret = avcodec_close(d.codec_ctx);
-    if (ret < 0) {
-        qWarning("failed to close decoder: %s", av_err2str(ret));
-        return false;
+    if (d.codec_ctx) {
+        AV_ENSURE_OK(avcodec_close(d.codec_ctx), false);
     }
     return true;
 }
@@ -206,84 +157,56 @@ void AVDecoder::flush()
  * do nothing if equal
  * close the old one. the codec context can not be shared in more than 1 decoder.
  */
-void AVDecoder::setCodecContext(AVCodecContext *codecCtx)
+void AVDecoder::setCodecContext(void *codecCtx)
 {
     DPTR_D(AVDecoder);
-    if (d.codec_ctx == codecCtx)
+    AVCodecContext *ctx = (AVCodecContext*)codecCtx;
+    if (d.codec_ctx == ctx)
         return;
-    close(); //
+    if (isOpen()) {
+        qWarning("Can not copy codec properties when it's open");
+        close(); //
+    }
     d.is_open = false;
-    d.codec_ctx = codecCtx;
+    if (!ctx) {
+        avcodec_free_context(&d.codec_ctx);
+        d.codec_ctx = 0;
+        return;
+    }
+    if (!d.codec_ctx)
+        d.codec_ctx = avcodec_alloc_context3(NULL);
+    // avcodec_alloc_context3(codec) equals to avcodec_alloc_context3(NULL) + avcodec_get_context_defaults3(codec), codec specified private data is initialized
+    if (!d.codec_ctx) {
+        qWarning("avcodec_alloc_context3 failed");
+        return;
+    }
+    AV_ENSURE_OK(avcodec_copy_context(d.codec_ctx, ctx));
 }
 
 //TODO: reset other parameters?
-AVCodecContext* AVDecoder::codecContext() const
+void* AVDecoder::codecContext() const
 {
     return d_func().codec_ctx;
 }
 
-void AVDecoder::setLowResolution(int lowres)
-{
-    d_func().low_resolution = lowres;
-}
-
 void AVDecoder::setCodecName(const QString &name)
 {
-    d_func().codec_name = name;
+    DPTR_D(AVDecoder);
+    if (d.codec_name == name)
+        return;
+    d.codec_name = name;
+    Q_EMIT codecNameChanged();
 }
 
 QString AVDecoder::codecName() const
 {
     DPTR_D(const AVDecoder);
-    if (!d.codec_name.isEmpty())
-        return d.codec_name;
-    if (d.codec_ctx)
-        return avcodec_get_name(d.codec_ctx->codec_id);
-    return "";
-}
-
-int AVDecoder::lowResolution() const
-{
-    return d_func().low_resolution;
-}
-
-void AVDecoder::setDecodeThreads(int threads)
-{
-    DPTR_D(AVDecoder);
-    d.threads = threads;// threads >= 0 ? threads : qMax(0, QThread::idealThreadCount());
-    d.threads = qMax(d.threads, 0); //check max?
-}
-
-int AVDecoder::decodeThreads() const
-{
-    return d_func().threads;
+    return d.codec_name;
 }
 
 bool AVDecoder::isAvailable() const
 {
     return d_func().codec_ctx != 0;
-}
-
-bool AVDecoder::prepare()
-{
-    DPTR_D(AVDecoder);
-    if (!d.codec_ctx) {
-        qWarning("call this after AVCodecContext is set!");
-        return false;
-    }
-    qDebug("Decoding threads count: %d", d.threads);
-    return true;
-}
-
-bool AVDecoder::decode(const QByteArray &encoded)
-{
-    Q_UNUSED(encoded);
-    return true;
-}
-
-QByteArray AVDecoder::data() const
-{
-    return d_func().decoded;
 }
 
 int AVDecoder::undecodedSize() const
@@ -295,95 +218,22 @@ void AVDecoder::setOptions(const QVariantHash &dict)
 {
     DPTR_D(AVDecoder);
     d.options = dict;
-    if (d.dict) {
-        av_dict_free(&d.dict);
-        d.dict = 0; //aready 0 in av_free
-    }
+    // if dict is empty, can not return here, default options will be set for AVCodecContext
+    // apply to AVCodecContext
+    d.applyOptionsForContext();
+    /* set AVDecoder meta properties.
+     * we do not check whether the property exists thus we can set dynamic properties.
+     */
     if (dict.isEmpty())
         return;
-    // TODO: use QVariantMap only
-    QVariant opt;
-    if (dict.contains("avcodec"))
-        opt = dict.value("avcodec");
-    if (opt.type() == QVariant::Hash) {
-        QVariantHash avcodec_dict = opt.toHash();
-        // workaround for VideoDecoderFFmpeg. now it does not call av_opt_set_xxx, so set here in dict
-        if (dict.contains("FFmpeg"))
-            avcodec_dict.unite(dict.value("FFmpeg").toHash());
-        QHashIterator<QString, QVariant> i(avcodec_dict);
-        while (i.hasNext()) {
-            i.next();
-            switch (i.value().type()) {
-            case QVariant::Hash: // for example "vaapi": {...}
-                continue;
-            case QVariant::Bool:
-                // QVariant.toByteArray(): "true" or "false", can not recognized by avcodec
-                av_dict_set(&d.dict, i.key().toLower().toUtf8().constData(), QByteArray::number(i.value().toBool()), 0);
-                break;
-            default:
-                // avcodec key and value are in lower case
-                av_dict_set(&d.dict, i.key().toLower().toUtf8().constData(), i.value().toByteArray().toLower().constData(), 0);
-                break;
-            }
-            qDebug("avcodec option: %s=>%s", i.key().toUtf8().constData(), i.value().toByteArray().constData());
-        }
-    } else if (opt.type() == QVariant::Map) {
-        QVariantMap avcodec_dict = opt.toMap();
-        // workaround for VideoDecoderFFmpeg. now it does not call av_opt_set_xxx, so set here in dict
-        if (dict.contains("FFmpeg"))
-            avcodec_dict.unite(dict.value("FFmpeg").toMap());
-        QMapIterator<QString, QVariant> i(avcodec_dict);
-        while (i.hasNext()) {
-            i.next();
-            switch (i.value().type()) {
-            case QVariant::Map: // for example "vaapi": {...}
-                continue;
-            case QVariant::Bool:
-                // QVariant.toByteArray(): "true" or "false", can not recognized by avcodec
-                av_dict_set(&d.dict, i.key().toLower().toUtf8().constData(), QByteArray::number(i.value().toBool()), 0);
-                break;
-            default:
-                // avcodec key and value are in lower case
-                av_dict_set(&d.dict, i.key().toLower().toUtf8().constData(), i.value().toByteArray().toLower().constData(), 0);
-                break;
-            }
-            qDebug("avcodec option: %s=>%s", i.key().toUtf8().constData(), i.value().toByteArray().constData());
-        }
-    }
-    if (name() == "avcodec")
+    if (name() == QLatin1String("avcodec"))
         return;
+    QVariant opt(dict);
     if (dict.contains(name()))
         opt = dict.value(name());
     else if (dict.contains(name().toLower()))
         opt = dict.value(name().toLower());
-    else
-        return;
-    if (opt.type() == QVariant::Hash) {
-        QVariantHash property_dict(opt.toHash());
-        if (property_dict.isEmpty())
-            return;
-        QHashIterator<QString, QVariant> i(property_dict);
-        while (i.hasNext()) {
-            i.next();
-            if (i.value().type() == QVariant::Hash) // for example "vaapi": {...}
-                continue;
-            setProperty(i.key().toUtf8().constData(), i.value());
-            qDebug("decoder property: %s=>%s", i.key().toUtf8().constData(), i.value().toByteArray().constData());
-        }
-    } else if (opt.type() == QVariant::Map) {
-        QVariantMap property_dict(opt.toMap());
-        if (property_dict.isEmpty())
-            return;
-        QMapIterator<QString, QVariant> i(property_dict);
-        while (i.hasNext()) {
-            i.next();
-            if (i.value().type() == QVariant::Map) // for example "vaapi": {...}
-                continue;
-            setProperty(i.key().toUtf8().constData(), i.value());
-            qDebug("decoder property: %s=>%s", i.key().toUtf8().constData(), i.value().toByteArray().constData());
-        }
-    }
-
+    Internal::setOptionsForQObject(opt, this);
 }
 
 QVariantHash AVDecoder::options() const
@@ -391,4 +241,38 @@ QVariantHash AVDecoder::options() const
     return d_func().options;
 }
 
+void AVDecoderPrivate::applyOptionsForDict()
+{
+    if (dict) {
+        av_dict_free(&dict);
+        dict = 0; //aready 0 in av_free
+    }
+    // enable ref if possible
+    av_dict_set(&dict, "refcounted_frames", enableFrameRef() ? "1" : "0", 0);
+    if (options.isEmpty())
+        return;
+    // TODO: use QVariantMap only
+    if (!options.contains(QStringLiteral("avcodec")))
+        return;
+     qDebug("set AVCodecContext dict:");
+    // workaround for VideoDecoderFFmpeg. now it does not call av_opt_set_xxx, so set here in dict
+    // TODO: wrong if opt is empty
+    Internal::setOptionsToDict(options.value(QStringLiteral("avcodec")), &dict);
+}
+
+void AVDecoderPrivate::applyOptionsForContext()
+{
+    if (!codec_ctx)
+        return;
+    if (options.isEmpty()) {
+        // av_opt_set_defaults(codec_ctx); //can't set default values! result maybe unexpected
+        return;
+    }
+
+    if (!options.contains(QStringLiteral("avcodec")))
+        return;
+    // workaround for VideoDecoderFFmpeg. now it does not call av_opt_set_xxx, so set here in dict
+    // TODO: wrong if opt is empty
+    Internal::setOptionsToFFmpegObj(options.value(QStringLiteral("avcodec")), codec_ctx);
+}
 } //namespace QtAV

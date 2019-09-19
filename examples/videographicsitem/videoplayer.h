@@ -22,10 +22,12 @@
 #define QTAV_VIDEOPLAYER_H
 
 #include <QtAV/AVPlayer.h>
-#include <QtAV/GraphicsItemRenderer.h>
+#include <QtAVWidgets/GraphicsItemRenderer.h>
 #include <QWidget>
 
+QT_BEGIN_NAMESPACE
 class QGraphicsView;
+QT_END_NAMESPACE
 class VideoPlayer : public QWidget
 {
     Q_OBJECT

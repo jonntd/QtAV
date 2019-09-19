@@ -1,8 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2013)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -20,11 +20,11 @@
 ******************************************************************************/
 
 #include "filter/FilterManager.h"
-#include <QtCore/QList>
 #include <QtCore/QMap>
 #include "QtAV/AVPlayer.h"
 #include "QtAV/Filter.h"
 #include "QtAV/AVOutput.h"
+#include "utils/Logger.h"
 
 namespace QtAV {
 
@@ -34,19 +34,16 @@ public:
     FilterManagerPrivate()
     {}
     ~FilterManagerPrivate() {
-
     }
 
     QList<Filter*> pending_release_filters;
-    QMap<Filter*, AVOutput*> filter_out_map;
-    QMap<Filter*, AVPlayer*> afilter_player_map;
-    QMap<Filter*, AVPlayer*> vfilter_player_map;
+    QMap<AVOutput*, QList<Filter*> > filter_out_map;
+    QMap<AVPlayer*, QList<Filter*> > afilter_player_map;
+    QMap<AVPlayer*, QList<Filter*> > vfilter_player_map;
 };
 
-FilterManager::FilterManager():
-    QObject(0)
+FilterManager::FilterManager()
 {
-    connect(this, SIGNAL(uninstallInTargetDone(Filter*)), this, SLOT(onUninstallInTargetDone(Filter*)), Qt::QueuedConnection);
 }
 
 FilterManager::~FilterManager()
@@ -59,142 +56,148 @@ FilterManager& FilterManager::instance()
     return sMgr;
 }
 
-bool FilterManager::registerFilter(Filter *filter, AVOutput *output)
+bool FilterManager::insert(Filter *filter, QList<Filter *> &filters, int pos)
+{
+    int p = pos;
+    if (p < 0)
+        p += filters.size();
+    if (p < 0)
+        p = 0;
+    if (p > filters.size())
+        p = filters.size();
+    const int index = filters.indexOf(filter);
+    // already installed at desired position
+    if (p == index)
+        return false;
+    if (p >= 0)
+        filters.removeAt(p);
+    filters.insert(p, filter);
+    return true;
+}
+
+bool FilterManager::registerFilter(Filter *filter, AVOutput *output, int pos)
 {
     DPTR_D(FilterManager);
     d.pending_release_filters.removeAll(filter); //erase?
-    if (d.filter_out_map.contains(filter)|| d.vfilter_player_map.contains(filter) || d.afilter_player_map.contains(filter)) {
-        qWarning("Filter %p lready registered!", filter);
-        return false;
-    }
-    d.filter_out_map.insert(filter, output);
-    return true;
+    QList<Filter*>& fs = d.filter_out_map[output];
+    return insert(filter, fs, pos);
 }
 
 QList<Filter*> FilterManager::outputFilters(AVOutput *output) const
 {
     DPTR_D(const FilterManager);
-    return d.filter_out_map.keys(output);
+    return d.filter_out_map.value(output);
 }
 
-bool FilterManager::registerAudioFilter(Filter *filter, AVPlayer *player)
+bool FilterManager::registerAudioFilter(Filter *filter, AVPlayer *player, int pos)
 {
     DPTR_D(FilterManager);
     d.pending_release_filters.removeAll(filter); //erase?
-    if (d.filter_out_map.contains(filter) || d.afilter_player_map.contains(filter) || d.vfilter_player_map.contains(filter)) {
-        qWarning("Filter %p lready registered!", filter);
-        return false;
-    }
-    d.afilter_player_map.insert(filter, player);
-    return true;
+    QList<Filter*>& fs = d.afilter_player_map[player];
+    return insert(filter, fs, pos);
 }
 
 QList<Filter*> FilterManager::audioFilters(AVPlayer *player) const
 {
     DPTR_D(const FilterManager);
-    return d.afilter_player_map.keys(player);
+    return d.afilter_player_map.value(player);
 }
 
-bool FilterManager::registerVideoFilter(Filter *filter, AVPlayer *player)
+bool FilterManager::registerVideoFilter(Filter *filter, AVPlayer *player, int pos)
 {
     DPTR_D(FilterManager);
     d.pending_release_filters.removeAll(filter); //erase?
-    if (d.filter_out_map.contains(filter) || d.vfilter_player_map.contains(filter) || d.afilter_player_map.contains(filter)) {
-        qWarning("Filter %p lready registered!", filter);
-        return false;
-    }
-    d.vfilter_player_map.insert(filter, player);
-    return true;
+    QList<Filter*>& fs = d.vfilter_player_map[player];
+    return insert(filter, fs, pos);
 }
 
 QList<Filter *> FilterManager::videoFilters(AVPlayer *player) const
 {
     DPTR_D(const FilterManager);
-    return d.vfilter_player_map.keys(player);
+    return d.vfilter_player_map.value(player);
 }
 
-// called by AVOutput/AVThread.uninstall imediatly
-bool FilterManager::unregisterFilter(Filter *filter)
+// called by AVOutput/AVPlayer.uninstall imediatly
+bool FilterManager::unregisterAudioFilter(Filter *filter, AVPlayer *player)
 {
     DPTR_D(FilterManager);
-    return d.filter_out_map.remove(filter) || d.vfilter_player_map.remove(filter) || d.afilter_player_map.remove(filter);
-}
-
-void FilterManager::onUninstallInTargetDone(Filter *filter)
-{
-    DPTR_D(FilterManager);
-    //d.filter_out_map.remove(filter) || d.vfilter_player_map.remove(filter) || d.afilter_player_map.remove(filter);
-    //
-    if (d.pending_release_filters.contains(filter)) {
-        releaseFilterNow(filter);
+    QList<Filter*>& fs = d.afilter_player_map[player];
+    bool ret = false;
+    if (fs.removeAll(filter) > 0) {
+        ret = true;
     }
+    if (fs.isEmpty())
+        d.afilter_player_map.remove(player);
+    return ret;
 }
 
-bool FilterManager::releaseFilter(Filter *filter)
+bool FilterManager::unregisterVideoFilter(Filter *filter, AVPlayer *player)
 {
     DPTR_D(FilterManager);
-    d.pending_release_filters.push_back(filter);
-    // will delete filter in slot onUninstallInTargetDone()(signal emitted when uninstall task done)
-    return uninstallFilter(filter) || releaseFilterNow(filter);
-}
-
-// is it thread safe? always be called in main thread if releaseFilter() and this slot in main thread
-bool FilterManager::releaseFilterNow(Filter *filter)
-{
-    DPTR_D(FilterManager);
-    int n = d.pending_release_filters.removeAll(filter);
-    if (n > 0) {
-        delete filter;
-        filter = 0; //filter will not changed!
+    QList<Filter*>& fs = d.vfilter_player_map[player];
+    bool ret = false;
+    if (fs.removeAll(filter) > 0) {
+        ret = true;
     }
-    return !!n;
+    if (fs.isEmpty())
+        d.vfilter_player_map.remove(player);
+    return ret;
+}
+
+bool FilterManager::unregisterFilter(Filter *filter, AVOutput *output)
+{
+    DPTR_D(FilterManager);
+    QList<Filter*>& fs = d.filter_out_map[output];
+    bool ret = fs.removeAll(filter) > 0;
+    if (fs.isEmpty()) d.filter_out_map.remove(output);
+    return ret;
 }
 
 bool FilterManager::uninstallFilter(Filter *filter)
 {
     DPTR_D(FilterManager);
-    QMap<Filter*,AVOutput*>::Iterator it = d.filter_out_map.find(filter);
-    if (it != d.filter_out_map.end()) {
-        AVOutput *out = *it;
-        /*
-         * remove now so that filter install again will success, even if unregister not completed
-         * because the filter will never used in old target
-         */
-
-        d.filter_out_map.erase(it); //use unregister()?
-        out->uninstallFilter(filter);
-        return true;
+    QMap<AVPlayer*, QList<Filter*> > map1(d.vfilter_player_map); // NB: copy it for iteration because called code may modify map -- which caused crashes
+    QMap<AVPlayer*, QList<Filter*> >::iterator it = map1.begin();
+    while (it != map1.end()) {
+        if (uninstallVideoFilter(filter, it.key()))
+            return true;
+        ++it;
     }
-    QMap<Filter*,AVPlayer*>::Iterator it2 = d.vfilter_player_map.find(filter);
-    if (it2 != d.vfilter_player_map.end()) {
-        AVPlayer *player = *it2;
-        /*
-         * remove now so that filter install again will success, even if unregister not completed
-         * because the filter will never used in old target
-         */
-
-        d.vfilter_player_map.erase(it2); //use unregister()?
-        player->uninstallFilter(filter); //post an uninstall task to active player's AVThread
-        return true;
+    QMap<AVPlayer *, QList<Filter *> > map2(d.afilter_player_map); // copy to avoid crashes when called-code modifies map
+    it = map2.begin();
+    while (it != map2.end()) {
+        if (uninstallAudioFilter(filter, it.key()))
+            return true;
+        ++it;
     }
-    it2 = d.afilter_player_map.find(filter);
-    if (it2 != d.afilter_player_map.end()) {
-        AVPlayer *player = *it2;
-        /*
-         * remove now so that filter install again will success, even if unregister not completed
-         * because the filter will never used in old target
-         */
-
-        d.afilter_player_map.erase(it2); //use unregister()?
-        player->uninstallFilter(filter); //post an uninstall task to active player's AVThread
-        return true;
+    QMap<AVOutput*, QList<Filter*> > map3(d.filter_out_map); // copy to avoid crashes
+    QMap<AVOutput*, QList<Filter*> >::iterator it2 = map3.begin();
+    while (it2 != map3.end()) {
+        if (uninstallFilter(filter, it2.key()))
+            return true;
+        ++it2;
     }
     return false;
 }
 
-void FilterManager::emitOnUninstallInTargetDone(Filter *filter)
+bool FilterManager::uninstallAudioFilter(Filter *filter, AVPlayer *player)
 {
-    emit onUninstallInTargetDone(filter);
+    if (unregisterAudioFilter(filter, player))
+        return player->uninstallFilter(reinterpret_cast<AudioFilter*>(filter));
+    return false;
 }
 
+bool FilterManager::uninstallVideoFilter(Filter *filter, AVPlayer *player)
+{
+    if (unregisterVideoFilter(filter, player))
+        return player->uninstallFilter(reinterpret_cast<VideoFilter*>(filter));
+    return false;
+}
+
+bool FilterManager::uninstallFilter(Filter *filter, AVOutput *output)
+{
+    if (unregisterFilter(filter, output))
+        return output->uninstallFilter(filter);
+    return false;
+}
 } //namespace QtAV

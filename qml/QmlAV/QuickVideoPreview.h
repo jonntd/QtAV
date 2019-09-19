@@ -1,9 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
-    theoribeiro <theo@fictix.com.br>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2014)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -23,11 +22,17 @@
 #ifndef QTAV_QUICKVIDEOPREVIEW_H
 #define QTAV_QUICKVIDEOPREVIEW_H
 
-#include <QmlAV/QQuickItemRenderer.h>
 #include <QtAV/VideoFrameExtractor.h>
-
+#if QT_VERSION >= QT_VERSION_CHECK(5, 2, 0)
+#include <QmlAV/QuickFBORenderer.h>
+typedef QuickFBORenderer BaseQuickRenderer;
+#else
+#include <QmlAV/QQuickItemRenderer.h>
+typedef QQuickItemRenderer BaseQuickRenderer;
+#endif
 namespace QtAV {
-class QMLAV_EXPORT QuickVideoPreview : public QQuickItemRenderer
+
+class QuickVideoPreview : public BaseQuickRenderer
 {
     Q_OBJECT
     // position conflicts with QQuickItem.position

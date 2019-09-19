@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2017 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -22,12 +22,11 @@
 #ifndef QAV_DEMUXTHREAD_H
 #define QAV_DEMUXTHREAD_H
 
-#include <QtCore/QAtomicInt>
 #include <QtCore/QMutex>
+#include <QtCore/QSemaphore>
 #include <QtCore/QThread>
-#include <QtCore/QQueue>
 #include <QtCore/QRunnable>
-#include <utils/BlockingQueue.h>
+#include "PacketBuffer.h"
 
 namespace QtAV {
 
@@ -40,25 +39,38 @@ public:
     explicit AVDemuxThread(QObject *parent = 0);
     explicit AVDemuxThread(AVDemuxer *dmx, QObject *parent = 0);
     void setDemuxer(AVDemuxer *dmx);
+    void setAudioDemuxer(AVDemuxer *demuxer); //not thread safe
     void setAudioThread(AVThread *thread);
     AVThread* audioThread();
     void setVideoThread(AVThread *thread);
     AVThread* videoThread();
-    void seek(qint64 pos); //ms
+    void stepForward(); // show next video frame and pause
+    void stepBackward();
+    void seek(qint64 external_pos, qint64 pos, SeekType type); //ms
     //AVDemuxer* demuxer
     bool isPaused() const;
     bool isEnd() const;
-public slots:
+    bool atEndOfMedia() const;
+    PacketBuffer* buffer();
+    void updateBufferState();
     void stop(); //TODO: remove it?
-    void pause(bool p);
-    void nextFrame(); // show next video frame and pause
+    void pause(bool p, bool wait = false);
 
+    MediaEndAction mediaEndAction() const;
+    void setMediaEndAction(MediaEndAction value);
+    bool waitForStarted(int msec = -1);
 Q_SIGNALS:
     void requestClockPause(bool value);
-
+    void mediaStatusChanged(QtAV::MediaStatus);
+    void bufferProgressChanged(qreal);
+    void seekFinished(qint64 timestamp);
+    void stepFinished();
+    void internalSubtitlePacketRead(int index, const QtAV::Packet& packet);
 private slots:
-    void frameDeliveredSeekOnPause();
-    void frameDeliveredNextFrame();
+    void seekOnPauseFinished();
+    void frameDeliveredOnStepForward();
+    void eofDecodedOnStepForward();
+    void onAVThreadQuit();
 
 protected:
     virtual void run();
@@ -72,24 +84,28 @@ private:
     void setAVThread(AVThread *&pOld, AVThread* pNew);
     void newSeekRequest(QRunnable *r);
     void processNextSeekTask();
-    void seekInternal(qint64 pos); //must call in AVDemuxThread
+    void seekInternal(qint64 pos, SeekType type, qint64 external_pos = std::numeric_limits < qint64 >::min()); //must call in AVDemuxThread
     void pauseInternal(bool value);
-    void processNextPauseTask();
 
     bool paused;
     bool user_paused;
     volatile bool end;
+    MediaEndAction end_action;
+    bool m_buffering;
+    PacketBuffer *m_buffer;
     AVDemuxer *demuxer;
+    AVDemuxer *ademuxer;
     AVThread *audio_thread, *video_thread;
     int audio_stream, video_stream;
     QMutex buffer_mutex;
     QWaitCondition cond;
     BlockingQueue<QRunnable*> seek_tasks;
-    // if seeking on pause, schedule a skip pause task and a pause task
-    QQueue<QRunnable*> pause_tasks; // in thread tasks
 
-    QAtomicInt nb_next_frame;
+    QSemaphore sem;
+    QMutex next_frame_mutex;
+    int clock_type; // change happens in different threads(direct connection)
     friend class SeekTask;
+    friend class stepBackwardTask;
 };
 
 } //namespace QtAV

@@ -1,8 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2013)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -25,7 +25,6 @@
 #include <QtAV/Filter.h>
 #include <QtCore/QTime>
 #include <QtGui/QMatrix4x4>
-#include <QWidget>
 
 namespace QtAV {
 
@@ -33,11 +32,13 @@ class SimpleFilter : public VideoFilter
 {
     Q_OBJECT
 public:
-    SimpleFilter(QWidget *parent = 0);
+    SimpleFilter(QObject *parent = 0);
     virtual ~SimpleFilter();
     void enableRotate(bool r);
     void enableWaveEffect(bool w);
-    virtual VideoFilterContext::Type contextType() const { return VideoFilterContext::QtPainter; }
+    bool isSupported(VideoFilterContext::Type ct) const {
+        return ct == VideoFilterContext::QtPainter || ct == VideoFilterContext::X11;
+    }
     void setText(const QString& text);
     QString text() const;
     //show image if text is null

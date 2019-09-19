@@ -1,6 +1,6 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2018 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -22,14 +22,6 @@
 
 #include <stdio.h>
 
-#undef NV_CONFIG
-#define NV_CONFIG(FEATURE) (defined QTAV_HAVE_##FEATURE && QTAV_HAVE_##FEATURE)
-
-// high version will define cuXXX macro, so functions here will be not they look like
-#if !NV_CONFIG(DLLAPI_CUDA) && !defined(CUDA_LINK)
-#define CUDA_FORCE_API_VERSION 3010
-#endif
-
 #include "dllapi/nv_inc.h"
 #if NV_CONFIG(DLLAPI_CUDA)
 using namespace dllapi::cuda;
@@ -39,7 +31,7 @@ using namespace dllapi::cuda;
 #ifdef __cuda_cuda_h__
 
 // CUDA Driver API errors
-static const char *_cudaGetErrorEnum(CUresult error)
+inline const char *_cudaGetErrorEnum(CUresult error)
 {
     switch (error) {
         case CUDA_SUCCESS: return "CUDA_SUCCESS";
@@ -76,7 +68,6 @@ static const char *_cudaGetErrorEnum(CUresult error)
         case CUDA_ERROR_INVALID_HANDLE: return "CUDA_ERROR_INVALID_HANDLE";
         case CUDA_ERROR_NOT_FOUND: return "CUDA_ERROR_NOT_FOUND";
         case CUDA_ERROR_NOT_READY: return "CUDA_ERROR_NOT_READY";
-        case CUDA_ERROR_LAUNCH_FAILED: return "CUDA_ERROR_LAUNCH_FAILED";
         case CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES: return "CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES";
         case CUDA_ERROR_LAUNCH_TIMEOUT: return "CUDA_ERROR_LAUNCH_TIMEOUT";
         case CUDA_ERROR_LAUNCH_INCOMPATIBLE_TEXTURING: return "CUDA_ERROR_LAUNCH_INCOMPATIBLE_TEXTURING";
@@ -84,12 +75,8 @@ static const char *_cudaGetErrorEnum(CUresult error)
         case CUDA_ERROR_PEER_ACCESS_NOT_ENABLED: return "CUDA_ERROR_PEER_ACCESS_NOT_ENABLED";
         case CUDA_ERROR_PRIMARY_CONTEXT_ACTIVE: return "CUDA_ERROR_PRIMARY_CONTEXT_ACTIVE";
         case CUDA_ERROR_CONTEXT_IS_DESTROYED: return "CUDA_ERROR_CONTEXT_IS_DESTROYED";
-        case CUDA_ERROR_ASSERT: return "CUDA_ERROR_ASSERT";
-        case CUDA_ERROR_TOO_MANY_PEERS: return "CUDA_ERROR_TOO_MANY_PEERS";
-        case CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED: return "CUDA_ERROR_HOST_MEMORY_ALREADY_REGISTERED";
-        case CUDA_ERROR_HOST_MEMORY_NOT_REGISTERED: return "CUDA_ERROR_HOST_MEMORY_NOT_REGISTERED";
-        case CUDA_ERROR_UNKNOWN:
-        //TODO: 6.0 enum support
+        case CUDA_ERROR_LAUNCH_FAILED: return "CUDA_ERROR_LAUNCH_FAILED";
+        case CUDA_ERROR_UNKNOWN: return "CUDA_ERROR_UNKNOWN";
         default:
             return "CUDA_ERROR_UNKNOWN";
     }
@@ -118,17 +105,28 @@ inline int _ConvertSMVer2Cores(int major, int minor)
         { 0x20, 32 }, // Fermi Generation (SM 2.0) GF100 class
         { 0x21, 48 }, // Fermi Generation (SM 2.1) GF10x class
         { 0x30, 192}, // Kepler Generation (SM 3.0) GK10x class
+        { 0x32, 192}, // Kepler Generation (SM 3.2) GK10x class
         { 0x35, 192}, // Kepler Generation (SM 3.5) GK11x class
+        { 0x37, 192}, // Kepler Generation (SM 3.7) GK21x class
+        { 0x50, 128}, // Maxwell Generation (SM 5.0) GM10x class
+        { 0x52, 128}, // Maxwell Generation (SM 5.2) GM20x class //enc: h264 yuv444p, hevc (libavcodec/nvenc.c)
+        { 0x53, 128}, // Maxwell Generation (SM 5.3) GM20x class
+        { 0x60, 64 }, // Pascal Generation (SM 6.0) GP100 class
+        { 0x61, 128}, // Pascal Generation (SM 6.1) GP10x class
+        { 0x62, 128}, // Pascal Generation (SM 6.2) GP10x class
+        { 0x70, 64 }, // Volta Generation (SM 7.0) GV100 class
         {   -1, -1 }
     };
-    for (int index = 0; nGpuArchCoresPerSM[index].SM != -1; ++index) {
+    int index = 0;
+    while (nGpuArchCoresPerSM[index].SM != -1) {
         if (nGpuArchCoresPerSM[index].SM == ((major << 4) + minor)) {
             return nGpuArchCoresPerSM[index].Cores;
         }
+        ++index;
     }
     // If we don't find the values, we default use the previous one to run properly
-    printf("MapSMtoCores for SM %d.%d is undefined.  Default to use %d Cores/SM\n", major, minor, nGpuArchCoresPerSM[7].Cores);
-    return nGpuArchCoresPerSM[7].Cores;
+    printf("MapSMtoCores for SM %d.%d is undefined.  Default to use %d Cores/SM\n", major, minor, nGpuArchCoresPerSM[index-1].Cores);
+    return nGpuArchCoresPerSM[index - 1].Cores;
 }
 
 // end of GPU Architecture definitions

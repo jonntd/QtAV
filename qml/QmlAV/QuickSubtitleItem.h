@@ -1,9 +1,8 @@
 /******************************************************************************
-    QtAV:  Media play library based on Qt and FFmpeg
-    Copyright (C) 2014 Wang Bin <wbsecg1@gmail.com>
-    theoribeiro <theo@fictix.com.br>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
-*   This file is part of QtAV
+*   This file is part of QtAV (from 2014)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -27,9 +26,8 @@
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QSGTexture>
 #include <QmlAV/QuickSubtitle.h>
-#include <QmlAV/Export.h>
 
-class QMLAV_EXPORT QuickSubtitleItem : public QQuickItem, public QuickSubtitleObserver
+class QuickSubtitleItem : public QQuickItem, public QuickSubtitleObserver
 {
     Q_OBJECT
     Q_DISABLE_COPY(QuickSubtitleItem)

@@ -1,6 +1,6 @@
 /******************************************************************************
     singleton.h: singleton template
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
     
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -21,18 +21,17 @@
 #ifndef SINGLETON_H
 #define SINGLETON_H
 
+#include <cstdio>
 #include <cstdlib> //harmattan: atexit
-#include <iostream>
 #include <cassert>
-//#include <qglobal.h> //TODO: no qt
-#ifndef QT_NO_EXCEPTIONS
-#include <stdexcept>
+#define USE_EXCEPTION 0
+#if USE_EXCEPTION
+#include <stdexcept> // std::string breaks abi
 #endif
 
-#define DEBUG 0
-#if DEBUG
+#ifdef DEBUG
 #define DBG(fmt, ...) \
-    printf(fmt, ##__VA_ARGS__); \
+    fprintf(stderr, fmt, ##__VA_ARGS__); \
     fflush(0);
 #else
 #define DBG(...)
@@ -89,10 +88,10 @@ void Singleton<T>::MakeInstance()
     if (!pInstance_) {
         if (destroyed_) {
             destroyed_ = false;
-#ifndef QT_NO_EXCEPTIONS
+#if USE_EXCEPTION
             throw std::logic_error("Dead Reference Detected");
 #else
-            std::cerr << "Dead Reference Detected" << std::endl;
+            DBG("Dead Reference Detected");
             exit(1);
 #endif //QT_NO_EXCEPTIONS
         }

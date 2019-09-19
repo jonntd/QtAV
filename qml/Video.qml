@@ -1,6 +1,6 @@
 
 import QtQuick 2.0
-import QtAV 1.4
+import QtAV 1.7
 
 /*!
     \qmltype Video
@@ -17,7 +17,7 @@ import QtAV 1.4
 
     \qml
     import QtQuick 2.0
-    import QtAV 1.3
+    import QtAV 1.7
 
     Video {
         id: video
@@ -62,8 +62,35 @@ import QtAV 1.4
 Item {
     id: video
 
+    property alias startPosition: player.startPosition
+    property alias stopPosition: player.stopPosition
+    property alias videoFiltersGPU: videoOut.filters
+    property alias audioFilters: player.audioFilters
+    property alias videoFilters: player.videoFilters
+    property alias audioBackends: player.audioBackends
+    property alias supportedAudioBackends: player.supportedAudioBackends
+    property alias backgroundColor: videoOut.backgroundColor
+    property alias brightness: videoOut.brightness
+    property alias contrast: videoOut.contrast
+    property alias hue: videoOut.hue
+    property alias saturation: videoOut.saturation
+    property alias frameSize: videoOut.frameSize
+    property alias sourceAspectRatio: videoOut.sourceAspectRatio
+    property alias opengl: videoOut.opengl
+    property alias fastSeek: player.fastSeek
+    property alias timeout: player.timeout
+    property alias abortOnTimeout: player.abortOnTimeout
     property alias subtitle: subtitle
     property alias subtitleText: text_sub // not for ass.
+    property alias videoCapture: player.videoCapture
+    property alias audioTrack: player.audioTrack
+    property alias videoTrack: player.videoTrack
+    property alias externalAudio: player.externalAudio
+    property alias internalAudioTracks: player.internalAudioTracks
+    property alias externalAudioTracks: player.externalAudioTracks
+    property alias internalVideoTracks: player.internalVideoTracks
+    property alias internalSubtitleTracks: player.internalSubtitleTracks
+    property alias internalSubtitleTrack: player.internalSubtitleTrack
     /*** Properties of VideoOutput ***/
     /*!
         \qmlproperty enumeration Video::fillMode
@@ -137,7 +164,14 @@ Item {
         from 0.0 (empty) to 1.0
         (full).
     */
-    //property alias bufferProgress:  player.bufferProgress
+    property alias bufferProgress:  player.bufferProgress
+
+    /*!
+        \qmlproperty int Video::bufferSize
+
+        This property holds the buffer value.
+    */
+    property alias bufferSize:  player.bufferSize
 
     /*!
         \qmlproperty int Video::duration
@@ -275,7 +309,7 @@ Item {
         \li MediaPlayer.UnknownStatus - the status of the media cannot be determined.
         \endlist
     */
-    //property alias status:          player.status
+    property alias status:          player.status
 
     /*!
         \qmlproperty real Video::volume
@@ -314,32 +348,34 @@ Item {
     */
     signal playing
 
-    VideoOutput {
+    signal seekFinished
+
+    VideoOutput2 {
         id: videoOut
         anchors.fill: video
         source: player
+    }
 
-        SubtitleItem {
-            id: ass_sub
-            rotation: -videoOut.orientation
-            fillMode: parent.fillMode
-            source: subtitle
-            anchors.fill: parent
+    SubtitleItem {
+        id: ass_sub
+        rotation: -videoOut.orientation
+        fillMode: videoOut.fillMode
+        source: subtitle
+        anchors.fill: videoOut
+    }
+    Text {
+        id: text_sub
+        rotation: -videoOut.orientation
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignBottom
+        font {
+            pointSize: 20
+            bold: true
         }
-        Text {
-            id: text_sub
-            rotation: -videoOut.orientation
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignBottom
-            font {
-                pointSize: 20
-                bold: true
-            }
-            style: Text.Outline
-            styleColor: "blue"
-            color: "white"
-            anchors.fill: parent
-        }
+        style: Text.Outline
+        styleColor: "blue"
+        color: "white"
+        anchors.fill: videoOut
     }
 
     MediaPlayer {
@@ -347,6 +383,15 @@ Item {
         onPaused:  video.paused()
         onStopped: video.stopped()
         onPlaying: video.playing()
+        onSeekFinished: video.seekFinished()
+    }
+
+    function stepForward() {
+        player.stepForward()
+    }
+
+    function stepBackward() {
+        player.stepBackward()
     }
 
     /*!
@@ -402,7 +447,7 @@ Item {
             ass_sub.visible = canRender
             text_sub.visible = !canRender
         }
-        onEnableChanged: {
+        onEnabledChanged: {
             ass_sub.visible = enabled
             text_sub.visible = enabled
         }

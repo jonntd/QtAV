@@ -1,6 +1,6 @@
 /******************************************************************************
     QtAV Player Demo:  this file is part of QtAV examples
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -22,17 +22,26 @@
 #define MAINWINDOW_H
 
 #include <QWidget>
+#include <QUrl>
 
+QT_BEGIN_NAMESPACE
 class QWidgetAction;
+class QToolButton;
+QT_END_NAMESPACE
 namespace QtAV {
 class AudioOutput;
 class AVError;
 class AVPlayer;
 class AVClock;
 class VideoRenderer;
-class LibAVFilter;
+class LibAVFilterAudio;
+class LibAVFilterVideo;
 class SubtitleFilter;
+class VideoPreviewWidget;
+class DynamicShaderObject;
+class GLSLFilter;
 }
+QT_BEGIN_NAMESPACE
 class QMenu;
 class QTimeEdit;
 class QVBoxLayout;
@@ -40,6 +49,7 @@ class QLabel;
 class QPushButton;
 class QSpinBox;
 class QTimeEdit;
+QT_END_NAMESPACE
 class Button;
 class Slider;
 class PlayList;
@@ -48,19 +58,20 @@ class VideoEQConfigPage;
 class StatisticsView;
 class OSDFilter;
 class AVFilterSubtitle;
+class Preview;
 class MainWindow : public QWidget
 {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
-    void enableAudio(bool yes = true);
-    void setAudioOutput(QtAV::AudioOutput* ao);
-    void setRenderer(QtAV::VideoRenderer* renderer);
+    void setAudioBackends(const QStringList& backends);
+    bool setRenderer(QtAV::VideoRenderer* renderer);
     void setVideoDecoderNames(const QStringList& vd);
 
 public slots:
     void play(const QString& name);
+    void play(const QUrl& url);
     void openFile();
     void togglePlayPause();
     void showNextOSD();
@@ -69,6 +80,7 @@ signals:
     void ready();
 
 private slots:
+    void stopUnload();
     void about();
     void help();
     void openUrl();
@@ -91,9 +103,9 @@ private slots:
     void onStopPlay();
     void onPaused(bool p);
     void onSpeedChange(qreal speed);
-    void seekToMSec(int msec);
+    void setFrameRate();
     void seek();
-    void capture();
+    void seek(int);
     void showHideVolumeBar();
     void setVolume();
     void tryHideControlBar();
@@ -107,6 +119,7 @@ private slots:
     void onTimeSliderLeave();
     void handleError(const QtAV::AVError& e);
     void onMediaStatusChanged();
+    void onBufferProgress(qreal percent);
 
     void onVideoEQEngineChanged();
     void onBrightnessChanged(int b);
@@ -114,8 +127,14 @@ private slots:
     void onHueChanged(int h);
     void onSaturationChanged(int s);
 
+    void onSeekFinished(qint64 pos);
     void onCaptureConfigChanged();
-    void onAVFilterConfigChanged();
+    void onAVFilterVideoConfigChanged();
+    void onAVFilterAudioConfigChanged();
+    void onBufferValueChanged();
+    void onAbortOnTimeoutChanged();
+
+    void onUserShaderChanged();
 
     void donate();
     void setup();
@@ -127,6 +146,8 @@ private slots:
     void setSubtitleCharset(const QString& charSet);
     void setSubtitleEngine(const QString& value);
 
+    void changeClockType(QAction* action);
+    void syncVolumeUi(qreal value);
 protected:
     virtual void closeEvent(QCloseEvent *e);
     virtual void resizeEvent(QResizeEvent *);
@@ -142,11 +163,11 @@ private:
 
 private:
     bool mIsReady, mHasPendingPlay;
-    bool mNullAO;
     bool mControlOn;
     int mCursorTimer;
     int mShowControl; //0: can hide, 1: show and playing, 2: always show(not playing)
     int mRepeateMax;
+    QStringList mAudioBackends;
     QVBoxLayout *mpPlayerLayout;
 
     QWidget *mpControl;
@@ -154,10 +175,11 @@ private:
     QLabel *mpTitle;
     QLabel *mpSpeed;
     Slider *mpTimeSlider, *mpVolumeSlider;
-    Button *mpVolumeBtn;
-    Button *mpPlayPauseBtn, *mpStopBtn, *mpForwardBtn, *mpBackwardBtn;
-    Button *mpOpenBtn;
-    Button *mpInfoBtn, *mpMenuBtn, *mpSetupBtn, *mpCaptureBtn;
+    QToolButton *mpVolumeBtn;
+    QToolButton *mpPlayPauseBtn;
+    QToolButton *mpStopBtn, *mpForwardBtn, *mpBackwardBtn;
+    QToolButton *mpOpenBtn;
+    QToolButton *mpInfoBtn, *mpMenuBtn, *mpSetupBtn, *mpCaptureBtn;
     QMenu *mpMenu;
     QAction *mpVOAction, *mpARAction; //remove mpVOAction if vo.id() is supported
     QAction *mpRepeatEnableAction;
@@ -172,12 +194,11 @@ private:
 
     QtAV::AVClock *mpClock;
     QtAV::AVPlayer *mpPlayer;
-    QtAV::VideoRenderer *mpRenderer, *mpTempRenderer;
-    QtAV::LibAVFilter *mpAVFilter;
+    QtAV::VideoRenderer *mpRenderer;
+    QtAV::LibAVFilterVideo *mpVideoFilter;
+    QtAV::LibAVFilterAudio *mpAudioFilter;
     QString mFile;
     QString mTitle;
-    QPixmap mPlayPixmap;
-    QPixmap mPausePixmap;
 
     QLabel *mpPreview;
 
@@ -191,6 +212,9 @@ private:
 
     OSDFilter *mpOSD;
     QtAV::SubtitleFilter *mpSubtitle;
+    QtAV::VideoPreviewWidget *m_preview;
+    QtAV::DynamicShaderObject *m_shader;
+    QtAV::GLSLFilter *m_glsl;
 };
 
 

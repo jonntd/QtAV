@@ -1,6 +1,8 @@
 /******************************************************************************
-    AVError.cpp: description
-    Copyright (C) 2013 Wang Bin <wbsecg1@gmail.com>
+    QtAV:  Multimedia framework based on Qt and FFmpeg
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
+
+*   This file is part of QtAV (from 2013)
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -15,16 +17,7 @@
     You should have received a copy of the GNU Lesser General Public
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
-
-    Alternatively, this file may be used under the terms of the GNU
-    General Public License version 3.0 as published by the Free Software
-    Foundation and appearing in the file LICENSE.GPL included in the
-    packaging of this file.  Please review the following information to
-    ensure the GNU General Public License version 3.0 requirements will be
-    met: http://www.gnu.org/copyleft/gpl.html.
 ******************************************************************************/
-
-
 #include "QtAV/AVError.h"
 #include "QtAV/private/AVCompat.h"
 #ifndef QT_NO_DEBUG_STREAM
@@ -108,6 +101,7 @@ AVError::AVError(ErrorCode code, const QString &detail, int ffmpegError)
 AVError::AVError(const AVError& other)
     : mError(other.mError)
     , mFFmpegError(other.mFFmpegError)
+    , mDetail(other.mDetail)
 {
 }
 
@@ -142,68 +136,71 @@ QString AVError::string() const
             errStr = QObject::tr("No error");
             break;
         case OpenError:
-            errStr = "Open error";
+            errStr = QObject::tr("Open error");
             break;
         case OpenTimedout:
-            errStr = "Open timed out";
+            errStr = QObject::tr("Open timed out");
             break;
-        case FindStreamInfoError:
-            errStr = "Could not find stream info";
+        case ParseStreamTimedOut:
+            errStr = QObject::tr("Parse stream timed out");
+            break;
+        case ParseStreamError:
+            errStr = QObject::tr("Parse stream error");
             break;
         case StreamNotFound:
-            errStr = "Stream not found";
+            errStr = QObject::tr("Stream not found");
             break;
         case ReadTimedout:
-            errStr = "Read packet timed out";
+            errStr = QObject::tr("Read packet timed out");
             break;
         case ReadError:
-            errStr = "Read error";
+            errStr = QObject::tr("Read error");
             break;
         case SeekError:
-            errStr = "Seek error";
+            errStr = QObject::tr("Seek error");
             break;
         case ResourceError:
-            errStr = "Resource error";
+            errStr = QObject::tr("Resource error");
             break;
 
         case OpenCodecError:
-            errStr = "Open codec error";
+            errStr = QObject::tr("Open codec error");
             break;
         case CloseCodecError:
-            errStr = "Close codec error";
+            errStr = QObject::tr("Close codec error");
             break;
         case VideoCodecNotFound:
-            errStr = "Video codec not found";
+            errStr = QObject::tr("Video codec not found");
             break;
         case AudioCodecNotFound:
-            errStr = "Audio codec not found";
+            errStr = QObject::tr("Audio codec not found");
             break;
         case SubtitleCodecNotFound:
-            errStr = "Subtitle codec not found";
+            errStr = QObject::tr("Subtitle codec not found");
             break;
         case CodecError:
-            errStr = "Codec error";
+            errStr = QObject::tr("Codec error");
             break;
 
         case FormatError:
-            errStr = "Format error";
+            errStr = QObject::tr("Format error");
             break;
 
         case NetworkError:
-            errStr = "Network error";
+            errStr = QObject::tr("Network error");
             break;
 
         case AccessDenied:
-            errStr = "Access denied";
+            errStr = QObject::tr("Access denied");
             break;
 
         default:
-            errStr = "Unknow error";
+            errStr = QObject::tr("Unknow error");
             break;
         }
     }
     if (mFFmpegError != 0) {
-        errStr += QString(" (FFmpeg %1: %2)").arg(mFFmpegError, 0, 16).arg(ffmpegErrorString());
+        errStr += QStringLiteral("\n(FFmpeg %1: %2)").arg(mFFmpegError, 0, 16).arg(ffmpegErrorString());
     }
     return errStr;
 }
@@ -217,7 +214,7 @@ QString AVError::ffmpegErrorString() const
 {
     if (mFFmpegError == 0)
         return QString();
-    return av_err2str(mFFmpegError);
+    return QString::fromUtf8(av_err2str(mFFmpegError));
 }
 
 } //namespace QtAV

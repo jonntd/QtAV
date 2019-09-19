@@ -1,6 +1,6 @@
 /******************************************************************************
     ImageConverterIPP: Image resizing & color model convertion using Intel IPP
-    Copyright (C) 2012-2014 Wang Bin <wbsecg1@gmail.com>
+    Copyright (C) 2012-2016 Wang Bin <wbsecg1@gmail.com>
 
 *   This file is part of QtAV
 
@@ -19,16 +19,13 @@
     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ******************************************************************************/
 
-#include "QtAV/ImageConverter.h"
-#include "QtAV/private/ImageConverter_p.h"
+#include "ImageConverter.h"
+#include "ImageConverter_p.h"
 #include "QtAV/private/AVCompat.h"
+#include "QtAV/private/factory.h"
 #include "QtAV/private/mkid.h"
-#include "QtAV/private/prepost.h"
-
 #if QTAV_HAVE(IPP)
 #include <ipp.h>
-#else
-
 #endif
 #include "utils/Logger.h"
 
@@ -45,13 +42,8 @@ protected:
     virtual bool prepareData(); //Allocate memory for out data
 };
 
-ImageConverterId ImageConverterId_IPP = mkid32base36_3<'I', 'P', 'P'>::value;
-FACTORY_REGISTER_ID_AUTO(ImageConverter, IPP, "IPP")
-
-void RegisterImageConverterIPP_Man()
-{
-    FACTORY_REGISTER_ID_MAN(ImageConverter, IPP, "IPP")
-}
+ImageConverterId ImageConverterId_IPP = mkid::id32base36_3<'I', 'P', 'P'>::value;
+FACTORY_REGISTER(ImageConverter, IPP, "IPP")
 
 class ImageConverterIPPPrivate : public ImageConverterPrivate
 {
